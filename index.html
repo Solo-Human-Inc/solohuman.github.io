@@ -5,56 +5,604 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>solohuman</title>
   <style>
-    * {
-      margin: 0;
-      padding: 0;
-      box-sizing: border-box;
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    html, body { width: 100%; height: 100%; overflow: hidden; background: #050005; }
+    canvas { position: fixed; top: 0; left: 0; width: 100%; height: 100%; }
+    #overlay {
+      position: fixed;
+      top: 50%; left: 50%;
+      transform: translate(-50%, -50%);
+      z-index: 10;
+      text-align: center;
+      pointer-events: none;
     }
-
-    body {
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: center;
-      min-height: 100vh;
-      background: #fafafa;
-      color: #1a1a1a;
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-    }
-
     h1 {
-      font-size: 3rem;
-      font-weight: 300;
-      letter-spacing: 0.08em;
-      margin-bottom: 1.5rem;
+      font-size: 4.5rem;
+      font-weight: 200;
+      letter-spacing: 0.15em;
+      color: #fff;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      margin-bottom: 1.2rem;
+      text-shadow:
+        0 0 40px rgba(228,3,3,0.4),
+        0 0 80px rgba(0,77,255,0.3),
+        0 0 120px rgba(117,7,135,0.2);
+      animation: titleGlow 6s ease-in-out infinite;
     }
-
-    .typewriter {
+    @keyframes titleGlow {
+      0%, 100% { text-shadow: 0 0 40px rgba(228,3,3,0.4), 0 0 80px rgba(0,77,255,0.3), 0 0 120px rgba(117,7,135,0.2); }
+      33% { text-shadow: 0 0 40px rgba(255,140,0,0.4), 0 0 80px rgba(0,128,38,0.3), 0 0 120px rgba(228,3,3,0.2); }
+      66% { text-shadow: 0 0 40px rgba(0,77,255,0.4), 0 0 80px rgba(117,7,135,0.3), 0 0 120px rgba(255,237,0,0.2); }
+    }
+    .sub {
       font-size: 1.25rem;
       font-weight: 400;
-      color: #555;
+      color: rgba(255,255,255,0.7);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
       overflow: hidden;
+      display: inline-block;
       white-space: nowrap;
-      border-right: 2px solid #555;
+      border-right: 2px solid rgba(255,255,255,0.7);
       width: 0;
-      animation:
-        typing 1.8s steps(12) 0.8s forwards,
-        blink-caret 0.6s step-end infinite;
+      animation: typing 1.8s steps(12) 0.8s forwards, blink 0.6s step-end infinite;
     }
-
-    @keyframes typing {
-      from { width: 0; }
-      to { width: 12ch; }
-    }
-
-    @keyframes blink-caret {
-      0%, 100% { border-color: #555; }
-      50% { border-color: transparent; }
-    }
+    @keyframes typing { from { width: 0 } to { width: 12ch } }
+    @keyframes blink { 0%,100% { border-color: rgba(255,255,255,0.7) } 50% { border-color: transparent } }
   </style>
 </head>
 <body>
-  <h1>solohuman</h1>
-  <p class="typewriter">Coming soon.</p>
+  <div id="overlay">
+    <h1>solohuman</h1>
+    <p class="sub">Coming soon.</p>
+  </div>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+  <script>
+  (function() {
+    // ========== SETUP ==========
+    const renderer = new THREE.WebGLRenderer({ antialias: false, powerPreference: 'high-performance' });
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
+    renderer.autoClear = false;
+    document.body.insertBefore(renderer.domElement, document.body.firstChild);
+
+    // Background scene (fullscreen shader)
+    const bgScene = new THREE.Scene();
+    const bgCamera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
+
+    // Main scene (figures + particles)
+    const mainScene = new THREE.Scene();
+    const mainCamera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.1, 200);
+    mainCamera.position.z = 20;
+
+    // ========== MOUSE ==========
+    const mouse = { x: 0.5, y: 0.5, sx: 0.5, sy: 0.5 };
+    window.addEventListener('mousemove', function(e) {
+      mouse.x = e.clientX / window.innerWidth;
+      mouse.y = e.clientY / window.innerHeight;
+    });
+
+    // ========== PSYCHEDELIC BACKGROUND SHADER ==========
+    const bgUniforms = {
+      uTime: { value: 0 },
+      uMouse: { value: new THREE.Vector2(0.5, 0.5) },
+      uRes: { value: new THREE.Vector2(window.innerWidth, window.innerHeight) }
+    };
+
+    const bgMat = new THREE.ShaderMaterial({
+      uniforms: bgUniforms,
+      depthTest: false,
+      depthWrite: false,
+      vertexShader: 'void main(){gl_Position=vec4(position,1.0);}',
+      fragmentShader: [
+        'precision highp float;',
+        'uniform float uTime;',
+        'uniform vec2 uMouse;',
+        'uniform vec2 uRes;',
+        '',
+        'vec3 lgbt(float t){',
+        '  t=fract(t)*6.0;',
+        '  int i=int(floor(t));float f=fract(t);',
+        '  if(i==0)return mix(vec3(.894,.012,.012),vec3(1.,.549,0.),f);',
+        '  if(i==1)return mix(vec3(1.,.549,0.),vec3(1.,.929,0.),f);',
+        '  if(i==2)return mix(vec3(1.,.929,0.),vec3(0.,.502,.149),f);',
+        '  if(i==3)return mix(vec3(0.,.502,.149),vec3(0.,.302,1.),f);',
+        '  if(i==4)return mix(vec3(0.,.302,1.),vec3(.459,.027,.529),f);',
+        '  return mix(vec3(.459,.027,.529),vec3(.894,.012,.012),f);',
+        '}',
+        '',
+        'float hash(vec2 p){return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453);}',
+        'float sn(vec2 p){',
+        '  vec2 i=floor(p),f=fract(p);f=f*f*(3.-2.*f);',
+        '  return mix(mix(hash(i),hash(i+vec2(1,0)),f.x),mix(hash(i+vec2(0,1)),hash(i+vec2(1,1)),f.x),f.y);',
+        '}',
+        'float fbm(vec2 p){float v=0.,a=.5;for(int i=0;i<3;i++){v+=a*sn(p);p*=2.1;a*=.5;}return v;}',
+        '',
+        'void main(){',
+        '  vec2 uv=gl_FragCoord.xy/uRes;',
+        '  vec2 p=(uv-.5)*2.;p.x*=uRes.x/uRes.y;',
+        '  vec2 m=(uMouse-.5)*2.;m.x*=uRes.x/uRes.y;',
+        '  float t=uTime;',
+        '  float r=length(p),a=atan(p.y,p.x);',
+        '  float md=length(p-m);',
+        '',
+        '  // kaleidoscope 6-fold',
+        '  float ka=mod(a+3.14159,1.0472);',
+        '  ka=abs(ka-.5236);',
+        '  vec2 kp=vec2(cos(ka),sin(ka))*r;',
+        '',
+        '  // layered noise',
+        '  float n1=fbm(kp*3.+vec2(t*.3,t*.2));',
+        '  float n2=fbm(p*2.5+vec2(sin(t*.4),cos(t*.3)));',
+        '  float n3=sin(r*10.-t*3.+n1*6.)*.5+.5;',
+        '  float n4=sin(a*8.+t*1.5+n2*5.)*.5+.5;',
+        '  float swirl=fbm(vec2(a*2.+sin(r*3.+t),r*4.+cos(a*2.+t*.7)));',
+        '',
+        '  float pattern=n1*.25+n2*.2+n3*.2+n4*.15+swirl*.2;',
+        '',
+        '  // mouse ripple rings',
+        '  float ripple=sin(md*25.-t*6.)*exp(-md*1.8)*.35;',
+        '  pattern+=ripple;',
+        '',
+        '  // flag stripes near mouse',
+        '  float stripe=sin((p.y-m.y)*40.+t*2.)*.5+.5;',
+        '  float stripeBlend=exp(-md*2.)*.3;',
+        '  pattern=mix(pattern,stripe,stripeBlend);',
+        '',
+        '  vec3 col=lgbt(pattern+t*.08);',
+        '',
+        '  // intensity: dark base, bright near mouse',
+        '  float I=.12+.12*n3+.08*swirl;',
+        '  I+=.55*exp(-md*1.2);',
+        '  I+=abs(ripple)*.4;',
+        '  I+=.04*sin(t*4.+r*5.);',
+        '',
+        '  col*=I;',
+        '',
+        '  // vignette',
+        '  col*=1.-smoothstep(.5,2.2,r)*.6;',
+        '',
+        '  // subtle scanlines',
+        '  col*=.95+.05*sin(gl_FragCoord.y*1.5);',
+        '',
+        '  gl_FragColor=vec4(col,1.);',
+        '}'
+      ].join('\n')
+    });
+    bgScene.add(new THREE.Mesh(new THREE.PlaneGeometry(2, 2), bgMat));
+
+    // ========== GACHIMUCHI SILHOUETTE TEXTURES ==========
+    function createTexture(drawFn) {
+      var c = document.createElement('canvas');
+      c.width = 256; c.height = 384;
+      var ctx = c.getContext('2d');
+      ctx.fillStyle = '#fff';
+      ctx.strokeStyle = '#fff';
+      ctx.lineCap = 'round';
+      ctx.lineJoin = 'round';
+      drawFn(ctx, 256, 384);
+      var tex = new THREE.CanvasTexture(c);
+      tex.premultiplyAlpha = false;
+      return tex;
+    }
+
+    // Pose 1: Double Bicep Flex
+    function drawDoubleBicep(ctx, w, h) {
+      var cx = w / 2, s = w / 400;
+      ctx.save(); ctx.translate(cx, h * 0.48); ctx.scale(s, s);
+
+      // head
+      ctx.beginPath(); ctx.arc(0, -165, 28, 0, Math.PI * 2); ctx.fill();
+      // neck
+      ctx.fillRect(-14, -140, 28, 22);
+      // torso - wide V taper
+      ctx.beginPath();
+      ctx.moveTo(-65, -118);
+      ctx.quadraticCurveTo(-70, -60, -48, 10);
+      ctx.lineTo(-38, 35);
+      ctx.lineTo(38, 35);
+      ctx.lineTo(48, 10);
+      ctx.quadraticCurveTo(70, -60, 65, -118);
+      ctx.closePath(); ctx.fill();
+      // chest detail
+      ctx.beginPath(); ctx.moveTo(0, -110); ctx.lineTo(0, -50); ctx.lineWidth = 2; ctx.stroke();
+
+      // left arm
+      ctx.lineWidth = 32;
+      ctx.beginPath(); ctx.moveTo(-65, -112); ctx.quadraticCurveTo(-95, -105, -105, -78); ctx.stroke();
+      ctx.lineWidth = 28;
+      ctx.beginPath(); ctx.moveTo(-105, -78); ctx.quadraticCurveTo(-98, -110, -75, -148); ctx.stroke();
+      ctx.beginPath(); ctx.arc(-72, -155, 15, 0, Math.PI * 2); ctx.fill(); // fist
+      ctx.beginPath(); ctx.ellipse(-95, -100, 22, 16, -0.4, 0, Math.PI * 2); ctx.fill(); // bicep
+
+      // right arm
+      ctx.lineWidth = 32;
+      ctx.beginPath(); ctx.moveTo(65, -112); ctx.quadraticCurveTo(95, -105, 105, -78); ctx.stroke();
+      ctx.lineWidth = 28;
+      ctx.beginPath(); ctx.moveTo(105, -78); ctx.quadraticCurveTo(98, -110, 75, -148); ctx.stroke();
+      ctx.beginPath(); ctx.arc(72, -155, 15, 0, Math.PI * 2); ctx.fill();
+      ctx.beginPath(); ctx.ellipse(95, -100, 22, 16, 0.4, 0, Math.PI * 2); ctx.fill();
+
+      // legs
+      ctx.lineWidth = 34;
+      ctx.beginPath(); ctx.moveTo(-25, 35); ctx.quadraticCurveTo(-32, 100, -30, 155); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(25, 35); ctx.quadraticCurveTo(32, 100, 30, 155); ctx.stroke();
+      // calves
+      ctx.lineWidth = 26;
+      ctx.beginPath(); ctx.moveTo(-30, 155); ctx.lineTo(-28, 220); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(30, 155); ctx.lineTo(28, 220); ctx.stroke();
+
+      ctx.restore();
+    }
+
+    // Pose 2: Most Muscular (Crab)
+    function drawCrab(ctx, w, h) {
+      var cx = w / 2, s = w / 400;
+      ctx.save(); ctx.translate(cx, h * 0.48); ctx.scale(s, s);
+
+      ctx.beginPath(); ctx.arc(0, -150, 26, 0, Math.PI * 2); ctx.fill();
+      ctx.fillRect(-16, -128, 32, 18);
+      // hunched torso
+      ctx.beginPath();
+      ctx.moveTo(-72, -110);
+      ctx.quadraticCurveTo(-75, -50, -50, 15);
+      ctx.lineTo(-35, 35);
+      ctx.lineTo(35, 35);
+      ctx.lineTo(50, 15);
+      ctx.quadraticCurveTo(75, -50, 72, -110);
+      ctx.closePath(); ctx.fill();
+
+      // traps (hunched shoulders)
+      ctx.beginPath(); ctx.ellipse(-50, -125, 25, 15, -0.3, 0, Math.PI * 2); ctx.fill();
+      ctx.beginPath(); ctx.ellipse(50, -125, 25, 15, 0.3, 0, Math.PI * 2); ctx.fill();
+
+      // arms forward and down
+      ctx.lineWidth = 30;
+      ctx.beginPath(); ctx.moveTo(-72, -105); ctx.quadraticCurveTo(-80, -70, -55, -45); ctx.stroke();
+      ctx.lineWidth = 26;
+      ctx.beginPath(); ctx.moveTo(-55, -45); ctx.quadraticCurveTo(-35, -55, -15, -60); ctx.stroke();
+      ctx.beginPath(); ctx.arc(-12, -60, 13, 0, Math.PI * 2); ctx.fill();
+
+      ctx.lineWidth = 30;
+      ctx.beginPath(); ctx.moveTo(72, -105); ctx.quadraticCurveTo(80, -70, 55, -45); ctx.stroke();
+      ctx.lineWidth = 26;
+      ctx.beginPath(); ctx.moveTo(55, -45); ctx.quadraticCurveTo(35, -55, 15, -60); ctx.stroke();
+      ctx.beginPath(); ctx.arc(12, -60, 13, 0, Math.PI * 2); ctx.fill();
+
+      // wide legs
+      ctx.lineWidth = 34;
+      ctx.beginPath(); ctx.moveTo(-28, 35); ctx.quadraticCurveTo(-48, 100, -55, 160); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(28, 35); ctx.quadraticCurveTo(48, 100, 55, 160); ctx.stroke();
+      ctx.lineWidth = 26;
+      ctx.beginPath(); ctx.moveTo(-55, 160); ctx.lineTo(-52, 225); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(55, 160); ctx.lineTo(52, 225); ctx.stroke();
+
+      ctx.restore();
+    }
+
+    // Pose 3: Victory Arms
+    function drawVictory(ctx, w, h) {
+      var cx = w / 2, s = w / 400;
+      ctx.save(); ctx.translate(cx, h * 0.5); ctx.scale(s, s);
+
+      ctx.beginPath(); ctx.arc(0, -155, 27, 0, Math.PI * 2); ctx.fill();
+      ctx.fillRect(-13, -130, 26, 20);
+      ctx.beginPath();
+      ctx.moveTo(-58, -110);
+      ctx.quadraticCurveTo(-62, -55, -42, 10);
+      ctx.lineTo(-35, 38);
+      ctx.lineTo(35, 38);
+      ctx.lineTo(42, 10);
+      ctx.quadraticCurveTo(62, -55, 58, -110);
+      ctx.closePath(); ctx.fill();
+
+      // arms up in V
+      ctx.lineWidth = 28;
+      ctx.beginPath(); ctx.moveTo(-58, -108); ctx.quadraticCurveTo(-80, -140, -90, -195); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(58, -108); ctx.quadraticCurveTo(80, -140, 90, -195); ctx.stroke();
+      // fists
+      ctx.beginPath(); ctx.arc(-92, -200, 14, 0, Math.PI * 2); ctx.fill();
+      ctx.beginPath(); ctx.arc(92, -200, 14, 0, Math.PI * 2); ctx.fill();
+
+      ctx.lineWidth = 32;
+      ctx.beginPath(); ctx.moveTo(-22, 38); ctx.lineTo(-25, 155); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(22, 38); ctx.lineTo(25, 155); ctx.stroke();
+      ctx.lineWidth = 26;
+      ctx.beginPath(); ctx.moveTo(-25, 155); ctx.lineTo(-24, 225); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(25, 155); ctx.lineTo(24, 225); ctx.stroke();
+
+      ctx.restore();
+    }
+
+    // Pose 4: Lat Spread
+    function drawLatSpread(ctx, w, h) {
+      var cx = w / 2, s = w / 400;
+      ctx.save(); ctx.translate(cx, h * 0.48); ctx.scale(s, s);
+
+      ctx.beginPath(); ctx.arc(0, -158, 26, 0, Math.PI * 2); ctx.fill();
+      ctx.fillRect(-15, -135, 30, 20);
+      // extra wide torso for lats
+      ctx.beginPath();
+      ctx.moveTo(-75, -115);
+      ctx.quadraticCurveTo(-82, -60, -60, 5);
+      ctx.lineTo(-40, 35);
+      ctx.lineTo(40, 35);
+      ctx.lineTo(60, 5);
+      ctx.quadraticCurveTo(82, -60, 75, -115);
+      ctx.closePath(); ctx.fill();
+
+      // arms out, elbows bent, hands on waist
+      ctx.lineWidth = 28;
+      ctx.beginPath(); ctx.moveTo(-75, -110); ctx.quadraticCurveTo(-105, -90, -110, -55); ctx.stroke();
+      ctx.lineWidth = 24;
+      ctx.beginPath(); ctx.moveTo(-110, -55); ctx.quadraticCurveTo(-90, -20, -55, 5); ctx.stroke();
+
+      ctx.lineWidth = 28;
+      ctx.beginPath(); ctx.moveTo(75, -110); ctx.quadraticCurveTo(105, -90, 110, -55); ctx.stroke();
+      ctx.lineWidth = 24;
+      ctx.beginPath(); ctx.moveTo(110, -55); ctx.quadraticCurveTo(90, -20, 55, 5); ctx.stroke();
+
+      ctx.lineWidth = 34;
+      ctx.beginPath(); ctx.moveTo(-25, 35); ctx.lineTo(-30, 160); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(25, 35); ctx.lineTo(30, 160); ctx.stroke();
+      ctx.lineWidth = 26;
+      ctx.beginPath(); ctx.moveTo(-30, 160); ctx.lineTo(-28, 225); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(30, 160); ctx.lineTo(28, 225); ctx.stroke();
+
+      ctx.restore();
+    }
+
+    // Pose 5: Wrestling Ready
+    function drawWrestling(ctx, w, h) {
+      var cx = w / 2, s = w / 400;
+      ctx.save(); ctx.translate(cx, h * 0.46); ctx.scale(s, s);
+
+      // leaning forward
+      ctx.beginPath(); ctx.arc(5, -148, 25, 0, Math.PI * 2); ctx.fill();
+      ctx.fillRect(-8, -126, 26, 18);
+      // torso angled forward
+      ctx.beginPath();
+      ctx.moveTo(-60, -108);
+      ctx.quadraticCurveTo(-65, -50, -45, 15);
+      ctx.lineTo(-32, 40);
+      ctx.lineTo(38, 35);
+      ctx.lineTo(50, 10);
+      ctx.quadraticCurveTo(68, -55, 62, -108);
+      ctx.closePath(); ctx.fill();
+
+      // arms spread wide reaching
+      ctx.lineWidth = 28;
+      ctx.beginPath(); ctx.moveTo(-60, -100); ctx.quadraticCurveTo(-95, -80, -120, -48); ctx.stroke();
+      ctx.lineWidth = 24;
+      ctx.beginPath(); ctx.moveTo(-120, -48); ctx.quadraticCurveTo(-125, -25, -118, -5); ctx.stroke();
+      ctx.beginPath(); ctx.arc(-116, 0, 13, 0, Math.PI * 2); ctx.fill();
+
+      ctx.lineWidth = 28;
+      ctx.beginPath(); ctx.moveTo(62, -100); ctx.quadraticCurveTo(98, -80, 122, -48); ctx.stroke();
+      ctx.lineWidth = 24;
+      ctx.beginPath(); ctx.moveTo(122, -48); ctx.quadraticCurveTo(128, -25, 120, -5); ctx.stroke();
+      ctx.beginPath(); ctx.arc(118, 0, 13, 0, Math.PI * 2); ctx.fill();
+
+      // wide stance legs
+      ctx.lineWidth = 32;
+      ctx.beginPath(); ctx.moveTo(-28, 40); ctx.quadraticCurveTo(-50, 105, -60, 165); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(30, 35); ctx.quadraticCurveTo(52, 100, 62, 165); ctx.stroke();
+      ctx.lineWidth = 26;
+      ctx.beginPath(); ctx.moveTo(-60, 165); ctx.lineTo(-55, 230); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(62, 165); ctx.lineTo(57, 230); ctx.stroke();
+
+      ctx.restore();
+    }
+
+    var poses = [drawDoubleBicep, drawCrab, drawVictory, drawLatSpread, drawWrestling];
+    var textures = poses.map(function(fn) { return createTexture(fn); });
+
+    // ========== CREATE FIGURES IN PARALLAX LAYERS ==========
+    var figures = [];
+    var layers = [
+      { z: -60, count: 5, baseScale: 18, opacity: 0.35 },
+      { z: -30, count: 4, baseScale: 12, opacity: 0.5 },
+      { z: -10, count: 3, baseScale: 8, opacity: 0.65 }
+    ];
+
+    layers.forEach(function(layer) {
+      for (var i = 0; i < layer.count; i++) {
+        var tex = textures[Math.floor(Math.random() * textures.length)];
+        var sc = layer.baseScale * (0.7 + Math.random() * 0.6);
+        var geo = new THREE.PlaneGeometry(sc, sc * 1.5);
+        var mat = new THREE.MeshBasicMaterial({
+          map: tex,
+          transparent: true,
+          blending: THREE.AdditiveBlending,
+          depthWrite: false,
+          side: THREE.DoubleSide,
+          opacity: layer.opacity * (0.6 + Math.random() * 0.4)
+        });
+        var mesh = new THREE.Mesh(geo, mat);
+
+        // spread across viewport
+        var spread = Math.abs(layer.z) * 2.5;
+        mesh.position.x = (Math.random() - 0.5) * spread;
+        mesh.position.y = (Math.random() - 0.5) * spread * 0.8;
+        mesh.position.z = layer.z + (Math.random() - 0.5) * 10;
+        mesh.rotation.z = (Math.random() - 0.5) * 0.15;
+
+        // flip some horizontally
+        if (Math.random() > 0.5) mesh.scale.x *= -1;
+
+        mesh.userData = {
+          baseY: mesh.position.y,
+          baseX: mesh.position.x,
+          floatSpeed: 0.8 + Math.random() * 2.0,
+          floatAmp: 2.0 + Math.random() * 4.0,
+          colorOffset: Math.random(),
+          rotSpeed: (Math.random() - 0.5) * 0.8,
+          pulseSpeed: 1.0 + Math.random() * 3.0,
+          pulsePhase: Math.random() * Math.PI * 2,
+          wobbleX: 0.5 + Math.random() * 1.5,
+          wobbleY: 0.3 + Math.random() * 1.2,
+          jitterSeed: Math.random() * 100
+        };
+
+        mainScene.add(mesh);
+        figures.push(mesh);
+      }
+    });
+
+    // ========== RAINBOW PARTICLES ==========
+    var PCOUNT = 500;
+    var pGeo = new THREE.BufferGeometry();
+    var pPos = new Float32Array(PCOUNT * 3);
+    var pCol = new Float32Array(PCOUNT * 3);
+    var pVel = new Float32Array(PCOUNT * 3);
+    var pLife = new Float32Array(PCOUNT);
+
+    var LGBT = [
+      [0.894, 0.012, 0.012],
+      [1.0, 0.549, 0.0],
+      [1.0, 0.929, 0.0],
+      [0.0, 0.502, 0.149],
+      [0.0, 0.302, 1.0],
+      [0.459, 0.027, 0.529]
+    ];
+
+    for (var i = 0; i < PCOUNT; i++) {
+      pPos[i * 3] = (Math.random() - 0.5) * 120;
+      pPos[i * 3 + 1] = (Math.random() - 0.5) * 80;
+      pPos[i * 3 + 2] = -70 + Math.random() * 80;
+      var c = LGBT[Math.floor(Math.random() * 6)];
+      pCol[i * 3] = c[0];
+      pCol[i * 3 + 1] = c[1];
+      pCol[i * 3 + 2] = c[2];
+      pVel[i * 3] = (Math.random() - 0.5) * 0.02;
+      pVel[i * 3 + 1] = 0.01 + Math.random() * 0.03;
+      pVel[i * 3 + 2] = (Math.random() - 0.5) * 0.01;
+      pLife[i] = Math.random();
+    }
+
+    pGeo.setAttribute('position', new THREE.Float32BufferAttribute(pPos, 3));
+    pGeo.setAttribute('color', new THREE.Float32BufferAttribute(pCol, 3));
+
+    var pMat = new THREE.PointsMaterial({
+      size: 0.2,
+      vertexColors: true,
+      transparent: true,
+      opacity: 0.7,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+      sizeAttenuation: true
+    });
+    var particles = new THREE.Points(pGeo, pMat);
+    mainScene.add(particles);
+
+    // ========== RESIZE ==========
+    window.addEventListener('resize', function() {
+      var w = window.innerWidth, h = window.innerHeight;
+      renderer.setSize(w, h);
+      mainCamera.aspect = w / h;
+      mainCamera.updateProjectionMatrix();
+      bgUniforms.uRes.value.set(w, h);
+    });
+
+    // ========== ANIMATION ==========
+    var clock = new THREE.Clock();
+
+    function lerpLGBT(t) {
+      t = ((t % 1) + 1) % 1;
+      var idx = t * 6;
+      var i = Math.floor(idx) % 6;
+      var f = idx - Math.floor(idx);
+      var a = LGBT[i], b = LGBT[(i + 1) % 6];
+      return new THREE.Color(
+        a[0] + (b[0] - a[0]) * f,
+        a[1] + (b[1] - a[1]) * f,
+        a[2] + (b[2] - a[2]) * f
+      );
+    }
+
+    function animate() {
+      requestAnimationFrame(animate);
+      var t = clock.getElapsedTime();
+
+      // smooth mouse
+      mouse.sx += (mouse.x - mouse.sx) * 0.15;
+      mouse.sy += (mouse.y - mouse.sy) * 0.15;
+
+      // update background
+      bgUniforms.uTime.value = t;
+      bgUniforms.uMouse.value.set(mouse.sx, 1.0 - mouse.sy);
+
+      // parallax camera
+      var camTargetX = (mouse.sx - 0.5) * 18;
+      var camTargetY = (0.5 - mouse.sy) * 12;
+      mainCamera.position.x += (camTargetX - mainCamera.position.x) * 0.08;
+      mainCamera.position.y += (camTargetY - mainCamera.position.y) * 0.08;
+      mainCamera.lookAt(0, 0, -20);
+
+      // world-space mouse for figure attraction
+      var mxW = (mouse.sx - 0.5) * 40;
+      var myW = (0.5 - mouse.sy) * 25;
+
+      // animate figures
+      for (var i = 0; i < figures.length; i++) {
+        var fig = figures[i];
+        var ud = fig.userData;
+
+        // chaotic multi-frequency floating
+        var js = ud.jitterSeed;
+        fig.position.y = ud.baseY
+          + Math.sin(t * ud.floatSpeed + js) * ud.floatAmp
+          + Math.sin(t * ud.floatSpeed * 2.3 + js * 3.7) * ud.floatAmp * 0.4
+          + Math.cos(t * ud.wobbleY * 3.1 + js * 1.3) * ud.floatAmp * 0.25;
+        fig.position.x = ud.baseX
+          + Math.sin(t * ud.floatSpeed * 0.9 + js * 2.1) * ud.floatAmp * 0.7
+          + Math.cos(t * ud.wobbleX * 2.7 + js * 4.2) * ud.floatAmp * 0.35
+          + Math.sin(t * 4.1 + js) * 0.5;
+
+        // strong cursor attraction
+        var dx = mxW - fig.position.x;
+        var dy = myW - fig.position.y;
+        var dist = Math.sqrt(dx * dx + dy * dy) + 1;
+        var pull = 8.0 / dist;
+        fig.position.x += dx * pull * 0.04;
+        fig.position.y += dy * pull * 0.04;
+
+        // aggressive rotation wobble
+        fig.rotation.z += ud.rotSpeed * 0.04;
+        fig.rotation.z += Math.sin(t * ud.floatSpeed * 1.5 + js) * 0.003;
+
+        // color cycling through LGBT palette
+        fig.material.color.copy(lerpLGBT(t * 0.08 + ud.colorOffset));
+
+        // breathing pulse
+        var pulse = 1.0 + Math.sin(t * ud.pulseSpeed + ud.pulsePhase) * 0.12;
+        var sx = fig.scale.x > 0 ? pulse : -pulse;
+        fig.scale.set(sx, pulse, 1);
+      }
+
+      // animate particles (position only, no color churn)
+      var pos = pGeo.attributes.position;
+      var pa = pos.array;
+      for (var i = 0; i < PCOUNT; i++) {
+        var i3 = i * 3;
+        pa[i3] += pVel[i3];
+        pa[i3 + 1] += pVel[i3 + 1];
+        pa[i3 + 2] += pVel[i3 + 2];
+        if (pa[i3 + 1] > 45) {
+          pa[i3 + 1] = -45;
+          pa[i3] = (Math.random() - 0.5) * 120;
+        }
+      }
+      pos.needsUpdate = true;
+
+      // render
+      renderer.clear();
+      renderer.render(bgScene, bgCamera);
+      renderer.render(mainScene, mainCamera);
+    }
+
+    animate();
+  })();
+  </script>
 </body>
 </html>
